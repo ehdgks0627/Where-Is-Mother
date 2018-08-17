@@ -1,5 +1,3 @@
-import random
-import os
 import json
 import subprocess
 import copy
@@ -11,11 +9,10 @@ INFECTED = [0, 1]
 input_size = 20
 # output_size = len(input_dirs)
 output_size = 2
-learning_rate = 0.0000005
-epoch_size = 500
+learning_rate = 0.005
+epoch_size = 400
 test_rate = 0.7
-layer_count = 7
-dropout_rate = 0.7
+dropout_rate = 0.2
 
 x_datas = []
 y_datas = []
@@ -32,15 +29,8 @@ def load_data(data_size=10000):
 
 
 tf.set_random_seed(1004)
-'''
-for idx, input_dir in enumerate(h_dirs):
-    x = []
-    y = []
-    search(h_dirs, 0)
-    buck = int(len(x) * test_rate)
-    x_h_datas += copy.deepcopy(x)
-'''
-for MAX_LAYER in [3]:
+
+for MAX_LAYER in [4, 5, 6]:
     Ls = []
     x, y = load_data()
     buck = int(len(x) * test_rate)
@@ -50,41 +40,41 @@ for MAX_LAYER in [3]:
     x_test_datas += copy.deepcopy(x[buck:])
     y_test_datas += copy.deepcopy(y[buck:])
 
-    for net_size in range(20, 100, 10):
-        print(net_size)
+    for net_size in range(50, 150, 10):
         tf.reset_default_graph()
         X = tf.placeholder(tf.float32, [None, input_size])
         Y = tf.placeholder(tf.float32, [None, output_size])
 
         keep_prob = tf.placeholder(tf.float32)
-        for layer_count in range(1, MAX_LAYER):
-            if layer_count == 1:
-                W = tf.get_variable("W%d" % (layer_count), shape=[input_size, net_size],
+        for layer_index in range(1, MAX_LAYER):
+            if layer_index == 1:
+                W = tf.get_variable("W%d" % (layer_index), shape=[input_size, net_size],
                                     initializer=tf.contrib.layers.xavier_initializer())
                 b = tf.Variable(tf.random_normal([net_size]))
-            elif layer_count == MAX_LAYER - 1:
-                W = tf.get_variable("W%d" % (layer_count), shape=[net_size, output_size],
+            elif layer_index == MAX_LAYER - 1:
+                W = tf.get_variable("W%d" % (layer_index), shape=[net_size, output_size],
                                     initializer=tf.contrib.layers.xavier_initializer())
                 b = tf.Variable(tf.random_normal([output_size]))
             else:
-                W = tf.get_variable("W%d" % (layer_count), shape=[net_size, net_size],
+                W = tf.get_variable("W%d" % (layer_index), shape=[net_size, net_size],
                                     initializer=tf.contrib.layers.xavier_initializer())
                 b = tf.Variable(tf.random_normal([net_size]))
 
-            if layer_count == 1:
+            if layer_index == 1:
                 L = tf.nn.relu(tf.matmul(X, W) + b)
-            elif layer_count == MAX_LAYER - 1:
-                hypothesis = tf.sigmoid(tf.matmul(Ls[-1], W) + b)
+            elif layer_index == MAX_LAYER - 1:
+                hypothesis = tf.matmul(Ls[-1], W) + b
             else:
                 L = tf.nn.relu(tf.matmul(Ls[-1], W) + b)
                 L = tf.nn.dropout(Ls[-1], keep_prob=keep_prob)
             Ls.append(L)
 
-        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=hypothesis, labels=Y))
+        cost = tf.reduce_sum(tf.pow(hypothesis - Y, 2)) / len(x_test_datas) / 1000
+
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
 
-        correct_prediction = tf.equal(tf.argmax(hypothesis, 1), tf.argmax(Y, 1))
-        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        # correct_prediction = tf.equal(tf.argmax(hypothesis, 1), tf.argmax(Y, 1))
+        accuracy = tf.reduce_mean(cost)
 
         cost_summary = tf.summary.scalar('cost', cost)
         accuracy_summary = tf.summary.scalar('accuracy', accuracy)
@@ -95,23 +85,23 @@ for MAX_LAYER in [3]:
             sess.run(tf.global_variables_initializer())
 
             writer = tf.summary.FileWriter(
-                './log/layer(%d)-input(%d)-dropout(%s)' % (layer_count, input_size, dropout_rate), sess.graph)
+                './log/layer(%d)-input(%d)-dropout(%s)' % (layer_index, input_size, dropout_rate), sess.graph)
 
             for epoch in range(epoch_size):
                 feed_dict = {X: x_datas, Y: y_datas, keep_prob: dropout_rate}
                 c, _, h, _y = sess.run([cost, optimizer, hypothesis, Y], feed_dict=feed_dict)
-                if epoch % 100 == 0:
+                if epoch % 10 == 0:
                     print('Epoch:', '%04d' % (epoch), 'cost =', '{:.9f}'.format(c))
-                    print('Accuracy:', sess.run(accuracy, feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1}))
+                    print('Accuracy:',
+                          1 / sess.run(accuracy, feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1}))
                     result = sess.run(merged, feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1})
                     writer.add_summary(result, epoch)
 
             print('Learning Finished!')
 
-            print('Prediction:',
-                  sess.run(correct_prediction, feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1}))
-            acc = sess.run([Y], feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1})
-            print('Accuracy:', acc)
+            # print('Prediction:',
+            #      sess.run(correct_prediction, feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1}))
+            print('Accuracy:', sess.run([accuracy], feed_dict={X: x_test_datas, Y: y_test_datas, keep_prob: 1}))
 
     '''
     h = sess.run(hypothesis, feed_dict={X: x_h_datas})
